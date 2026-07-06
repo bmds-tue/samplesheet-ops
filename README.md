@@ -1,23 +1,26 @@
 # nf-meta-samplesheet-ops
 
-A single, reusable Nextflow connector for common pandas-style samplesheet/metadata
+A single, reusable Nextflow connector for common samplesheet/metadata
 operations: merge/join, drop columns, drop rows (`dropna` / `drop_duplicates`), filter,
 and concat. Reads one or two CSV/TSV samplesheets, applies an ordered chain of
 operations, and writes the result as CSV or TSV. Implemented entirely with native
 Nextflow channel operators (`map`, `filter`, `join`, `groupTuple`, `mix`, `collectFile`)
 — no Python/pandas dependency.
 
+The logic lives in a named workflow, `SAMPLESHEET_OPS`, which takes all params as
+explicit inputs and emits the written file as a path (`SAMPLESHEET_OPS.out.samplesheet`).
+
 ## Usage
 
 ```bash
-nextflow run https://github.com/<org>/nf-meta-samplesheet-ops \
+nextflow run https://github.com/bmds-tue/nf-meta-samplesheet-ops \
   --samplesheet1 sheet_a.csv \
   --samplesheet2 sheet_b.tsv \
   --ops merge,drop_columns,filter \
   --merge_on sample --merge_how left \
   --drop_columns_cols batch_x,batch_y \
   --filter_col condition --filter_op ne --filter_value control \
-  --outdir results --outname samplesheet --format csv
+  --outdir results --outname samplesheet.csv
 ```
 
 `--ops` is an ordered, comma-separated list of operation names; each op's arguments
@@ -34,13 +37,13 @@ the chain transform `samplesheet1`'s running state only, not `samplesheet2` itse
 | `samplesheet1` | (required) | Path to the primary sheet. |
 | `samplesheet2` | — | Path to the second sheet. Required only if `--ops` includes `merge` or `concat`. |
 | `ops` | (required) | Ordered comma-separated operation list, e.g. `merge,dropna`. |
-| `outdir` | `.` | Directory the output samplesheet is written to. |
-| `outname` | `samplesheet` | Output filename stem (no extension). |
-| `format` | `csv` | Output format/delimiter: `csv` or `tsv`. Also sets the output file's extension. |
+| `outdir` | (required) | Directory the output samplesheet is written to. |
+| `outname` | `samplesheet.csv` | Output filename, including extension. |
 | `quote` | `"` | Quote character used when parsing input CSV/TSV. |
 
-Input delimiters are auto-detected per file from its extension (`.csv` → comma,
-`.tsv`/`.tab` → tab).
+Both input and output delimiters are auto-detected from a file's extension (`.csv` →
+comma, `.tsv`/`.tab` → tab) — `outname`'s extension is what controls the output
+format, so give it a `.csv`/`.tsv`/`.tab` name.
 
 ## Operations
 
@@ -66,7 +69,7 @@ Stack two sheets with differing columns into one TSV:
 
 ```bash
 nextflow run main.nf --samplesheet1 a.csv --samplesheet2 b.tsv \
-  --ops concat --format tsv --outdir results
+  --ops concat --outdir results --outname samplesheet.tsv
 ```
 
 ## Test
