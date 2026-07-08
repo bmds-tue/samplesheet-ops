@@ -39,17 +39,21 @@ the chain transform `samplesheet1`'s running state only, not `samplesheet2` itse
 | `ops` | (required) | Ordered comma-separated operation list, e.g. `merge,dropna`. |
 | `outdir` | (required) | Directory the output samplesheet is written to. |
 | `outname` | `samplesheet.csv` | Output filename, including extension. |
-| `quote` | `"` | Quote character used when parsing input CSV/TSV. |
+| `quote` | `"` | Quote character used both when parsing input CSV/TSV and when quoting output fields. |
 
 Both input and output delimiters are auto-detected from a file's extension (`.csv` →
 comma, `.tsv`/`.tab` → tab) — `outname`'s extension is what controls the output
 format, so give it a `.csv`/`.tsv`/`.tab` name.
 
+Output fields are quoted (RFC4180-style, doubling embedded quote characters) whenever
+a value contains the output delimiter, the quote character, or a newline — so free-text
+columns (notes, descriptions, ...) round-trip safely.
+
 ## Operations
 
 | op | params | Behavior |
 |---|---|---|
-| `merge` | `merge_on` (required), `merge_how` (`inner`\|`left`, default `inner`), `merge_suffixes` (default `_x,_y`) | Joins `samplesheet1` (running state) with `samplesheet2` on a single shared key column. Overlapping non-key column names get suffixed per `merge_suffixes`. `left` keeps all left rows, blank-filling right-side columns when unmatched. |
+| `merge` | `merge_on` (default `sample`), `merge_how` (`inner`\|`left`, default `inner`), `merge_suffixes` (default `_x,_y`) | Joins `samplesheet1` (running state) with `samplesheet2` on a single shared key column. Overlapping non-key column names get suffixed per `merge_suffixes`. `left` keeps all left rows, blank-filling right-side columns when unmatched. |
 | `drop_columns` | `drop_columns_cols` (required) | Removes the given comma-separated columns. |
 | `dropna` | `dropna_cols` (default: all columns) | Drops rows where any of the given columns is blank. |
 | `drop_duplicates` | `drop_duplicates_cols` (default: all columns) | Deduplicates rows by the given column(s), keeping the first occurrence. |
@@ -70,6 +74,20 @@ Stack two sheets with differing columns into one TSV:
 ```bash
 nextflow run main.nf --samplesheet1 a.csv --samplesheet2 b.tsv \
   --ops concat --outdir results --outname samplesheet.tsv
+```
+
+## Params validation & help
+
+Parameters are described in `nextflow_schema.json` (types, defaults, required/enum/pattern
+constraints) via the [nf-schema](https://nextflow-io.github.io/nf-schema/) plugin. Every
+run validates params against that schema before anything executes, so a missing required
+param, an unknown `--ops` value, or an invalid enum fails fast with a clear message
+instead of an obscure downstream error.
+
+```bash
+nextflow run main.nf --help        # all top-level params, grouped
+nextflow run main.nf --help ops    # detailed help for a single param
+nextflow run main.nf --helpFull    # include hidden/advanced params too
 ```
 
 ## Test

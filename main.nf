@@ -1,5 +1,8 @@
 nextflow.enable.dsl = 2
 
+include { validateParameters; paramsHelp } from 'plugin/nf-schema'
+
+params.help                 = false
 params.samplesheet1         = null
 params.samplesheet2         = null
 params.ops                  = null
@@ -89,6 +92,8 @@ def applyOp(op, ch, cols, sheet2Rows, sheet2Cols, opParams) {
 
     if (op == 'merge') {
         def on = opParams.merge_on
+        print(cols)
+        print(sheet2Cols)
         if (!on) error "merge_on is required for the 'merge' op"
         if (!(on in cols))       error "merge_on '${on}' not found in samplesheet1's columns"
         if (!(on in sheet2Cols)) error "merge_on '${on}' not found in samplesheet2's columns"
@@ -218,6 +223,12 @@ workflow SAMPLESHEET_OPS {
 }
 
 workflow {
+    if (params.help) {
+        log.info paramsHelp(command: "nextflow run main.nf --samplesheet1 <path> --ops <ops> --outdir <dir>")
+        exit 0
+    }
+    validateParameters()
+
     SAMPLESHEET_OPS(
         params.samplesheet1,
         params.samplesheet2,

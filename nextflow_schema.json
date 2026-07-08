@@ -1,0 +1,171 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/bmds-tue/nf-meta-samplesheet-ops/main/nextflow_schema.json",
+    "title": "nf-meta-samplesheet-ops pipeline parameters",
+    "description": "Generalized Nextflow adapter for pandas-style samplesheet/metadata operations (merge, drop, dropna, drop_duplicates, filter, concat) on one or two CSV/TSV samplesheets.",
+    "type": "object",
+    "$defs": {
+        "input_output_options": {
+            "title": "Input/output options",
+            "type": "object",
+            "fa_icon": "fas fa-terminal",
+            "description": "Samplesheet inputs, the ordered operation chain, and where/how the result is written.",
+            "required": ["samplesheet1", "ops", "outdir"],
+            "properties": {
+                "samplesheet1": {
+                    "type": "string",
+                    "description": "Path to the primary CSV/TSV samplesheet.",
+                    "help_text": "This is the samplesheet that the operation chain runs against, starting as-is and getting transformed op by op. Delimiter is auto-detected from the file extension.",
+                    "format": "file-path",
+                    "exists": true,
+                    "pattern": "^\\S+\\.(csv|tsv|tab)$",
+                    "fa_icon": "fas fa-file-csv",
+                    "errorMessage": "samplesheet1 must be a valid file path with no spaces, ending in .csv, .tsv, or .tab, and must exist."
+                },
+                "samplesheet2": {
+                    "type": "string",
+                    "description": "Path to the second CSV/TSV samplesheet.",
+                    "help_text": "Required only when `--ops` includes `merge` or `concat`. Always read fresh -- it is not itself transformed by earlier ops in the chain, only samplesheet1's running state is.",
+                    "format": "file-path",
+                    "exists": true,
+                    "pattern": "^\\S+\\.(csv|tsv|tab)$",
+                    "fa_icon": "fas fa-file-csv",
+                    "errorMessage": "samplesheet2 must be a valid file path with no spaces, ending in .csv, .tsv, or .tab, and must exist."
+                },
+                "ops": {
+                    "type": "string",
+                    "description": "Ordered, comma-separated list of operations to apply left-to-right.",
+                    "help_text": "Allowed values: `merge`, `drop_columns`, `dropna`, `drop_duplicates`, `filter`, `concat`. An op name can only appear once per run, e.g. `merge,drop_columns,filter`.",
+                    "pattern": "^(merge|drop_columns|dropna|drop_duplicates|filter|concat)(,(merge|drop_columns|dropna|drop_duplicates|filter|concat))*$",
+                    "fa_icon": "fas fa-list-ol",
+                    "errorMessage": "ops must be a comma-separated list made up only of: merge, drop_columns, dropna, drop_duplicates, filter, concat."
+                },
+                "outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "minLength": 1,
+                    "description": "Directory the output samplesheet is written to.",
+                    "fa_icon": "fas fa-folder-open"
+                },
+                "outname": {
+                    "type": "string",
+                    "default": "samplesheet.csv",
+                    "description": "Output filename, including extension.",
+                    "help_text": "The extension controls the output format: `.csv` writes comma-delimited, `.tsv`/`.tab` writes tab-delimited.",
+                    "pattern": "^\\S+\\.(csv|tsv|tab)$",
+                    "fa_icon": "far fa-file",
+                    "errorMessage": "outname must end in .csv, .tsv, or .tab."
+                },
+                "quote": {
+                    "type": "string",
+                    "default": "\"",
+                    "minLength": 1,
+                    "maxLength": 1,
+                    "description": "Quote character used both when parsing input CSV/TSV and when quoting output fields.",
+                    "fa_icon": "fas fa-quote-right"
+                }
+            }
+        },
+        "merge_options": {
+            "title": "merge options",
+            "type": "object",
+            "fa_icon": "fas fa-code-branch",
+            "description": "Arguments for the 'merge' op (joins samplesheet1's running state with samplesheet2).",
+            "properties": {
+                "merge_on": {
+                    "type": "string",
+                    "default": "sample",
+                    "description": "Single shared key column present in both sheets to join on.",
+                    "fa_icon": "fas fa-key"
+                },
+                "merge_how": {
+                    "type": "string",
+                    "default": "inner",
+                    "enum": ["inner", "left"],
+                    "description": "Join type.",
+                    "help_text": "`inner` keeps only matching rows. `left` keeps all rows from samplesheet1's running state, blank-filling samplesheet2's columns when unmatched.",
+                    "fa_icon": "fas fa-object-group"
+                },
+                "merge_suffixes": {
+                    "type": "string",
+                    "default": "_x,_y",
+                    "pattern": "^[^,]+,[^,]+$",
+                    "description": "Comma-separated pair of suffixes applied to overlapping non-key column names from (samplesheet1, samplesheet2) respectively.",
+                    "fa_icon": "fas fa-clone",
+                    "errorMessage": "merge_suffixes must be exactly two non-empty, comma-separated values."
+                }
+            }
+        },
+        "drop_options": {
+            "title": "drop options",
+            "type": "object",
+            "fa_icon": "fas fa-eraser",
+            "description": "Arguments for the 'drop_columns', 'dropna', and 'drop_duplicates' ops.",
+            "properties": {
+                "drop_columns_cols": {
+                    "type": "string",
+                    "description": "Comma-separated column names to remove, for the 'drop_columns' op.",
+                    "fa_icon": "fas fa-columns"
+                },
+                "dropna_cols": {
+                    "type": "string",
+                    "description": "Comma-separated subset of columns to check for blank values, for the 'dropna' op.",
+                    "help_text": "Defaults to checking all columns if not set. A row is dropped if any of the listed columns is blank.",
+                    "fa_icon": "fas fa-eraser"
+                },
+                "drop_duplicates_cols": {
+                    "type": "string",
+                    "description": "Comma-separated subset of columns forming the dedup key, for the 'drop_duplicates' op.",
+                    "help_text": "Defaults to all columns if not set. Keeps the first occurrence per key.",
+                    "fa_icon": "fas fa-copy"
+                }
+            }
+        },
+        "filter_options": {
+            "title": "filter options",
+            "type": "object",
+            "fa_icon": "fas fa-filter",
+            "description": "Arguments for the 'filter' op.",
+            "properties": {
+                "filter_col": {
+                    "type": "string",
+                    "description": "Column to test, for the 'filter' op.",
+                    "fa_icon": "fas fa-columns"
+                },
+                "filter_op": {
+                    "type": "string",
+                    "default": "eq",
+                    "enum": ["eq", "ne", "contains"],
+                    "description": "Comparison operator used against filter_value.",
+                    "fa_icon": "fas fa-equals"
+                },
+                "filter_value": {
+                    "type": "string",
+                    "description": "Value to compare filter_col against, for the 'filter' op.",
+                    "fa_icon": "fas fa-font"
+                }
+            }
+        },
+        "generic_options": {
+            "title": "Generic options",
+            "type": "object",
+            "fa_icon": "fas fa-question-circle",
+            "description": "Less common options.",
+            "properties": {
+                "help": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Display help text.",
+                    "fa_icon": "fas fa-question-circle"
+                }
+            }
+        }
+    },
+    "allOf": [
+        {"$ref": "#/$defs/input_output_options"},
+        {"$ref": "#/$defs/merge_options"},
+        {"$ref": "#/$defs/drop_options"},
+        {"$ref": "#/$defs/filter_options"},
+        {"$ref": "#/$defs/generic_options"}
+    ]
+}
