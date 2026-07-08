@@ -196,10 +196,11 @@ workflow SAMPLESHEET_OPS {
 
     def outCh = finalCh
         .collect()
+        .ifEmpty([])   // collect() on an empty channel emits nothing at all -- force one [] so the header still gets written
         .map { rows ->
-            if (!rows) return finalCols.join(outSep) + '\n'
-            def header = rows[0].keySet().join(outSep)
-            def body   = rows.collect { r -> r.values().collect { v -> v ?: '' }.join(outSep) }.join('\n')
+            if (!rows) return finalCols.collect { c -> csvQuote(c, outSep, quote) }.join(outSep) + '\n'
+            def header = rows[0].keySet().collect { c -> csvQuote(c, outSep, quote) }.join(outSep)
+            def body   = rows.collect { r -> r.values().collect { v -> csvQuote(v, outSep, quote) }.join(outSep) }.join('\n')
             header + '\n' + body + '\n'
         }
         .collectFile(name: outname, storeDir: outdir)
