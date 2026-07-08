@@ -34,6 +34,17 @@ def splitList(s) {
     return s.split(',')*.trim()
 }
 
+// Quotes a single output field if it contains the delimiter, the quote character,
+// or a newline -- otherwise CSV/TSV rows silently shift columns whenever a value
+// (e.g. a free-text notes field) happens to contain a comma/tab.
+def csvQuote(value, sep, quoteChar) {
+    def v = value == null ? '' : value.toString()
+    if (v.contains(sep) || v.contains(quoteChar) || v.contains('\n') || v.contains('\r')) {
+        return quoteChar + v.replace(quoteChar, quoteChar + quoteChar) + quoteChar
+    }
+    return v
+}
+
 // Applies one op to the running channel, returning [newChannel, newColumnList] so
 // later ops (and the final header) know the shape without re-inspecting the data.
 // opParams bundles the per-op arguments so this stays a pure function of its inputs
@@ -158,9 +169,6 @@ workflow SAMPLESHEET_OPS {
     def sheet1Rows = file(samplesheet1, checkIfExists: true)
         .splitCsv(header: true, sep: detectSep(samplesheet1), quote: quote)
     def cols = sheet1Rows ? (sheet1Rows[0].keySet() as List) : []
-
-    print(sheet1Rows)
-    print(cols)
 
     def needsSheet2 = opsList.any { it in ['merge', 'concat'] }
     def sheet2Rows = []
