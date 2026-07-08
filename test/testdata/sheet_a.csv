@@ -1,0 +1,6 @@
+sample,condition,batch
+S1,treated,1
+S2,control,1
+S3,treated,2
+S4,control,2
+S5,treated,1

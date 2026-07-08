@@ -1,0 +1,252 @@
+nextflow_pipeline {
+
+    name "Test generalized samplesheet-ops adapter"
+    script "main.nf"
+
+    test("merge inner keeps only matching samples and suffixes overlapping columns") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_b.tsv"
+                ops          = "merge"
+                merge_on     = "sample"
+                merge_how    = "inner"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            assert out.exists()
+            def lines = out.readLines()
+            assert lines[0] == "sample,condition,batch_x,batch_y,reads"
+            assert lines.size() == 4
+            assert lines.any { it == "S1,treated,1,1,1000000" }
+            assert lines.any { it == "S2,control,1,1,950000" }
+            assert lines.any { it == "S3,treated,2,2,1100000" }
+        }
+    }
+
+    test("merge with zero matching rows still writes a header-only file") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_upper.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_nomatch.csv"
+                ops          = "merge"
+                merge_on     = "SAMPLE"
+                merge_how    = "inner"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            // an empty join must still produce a (header-only) file, not nothing at all
+            assert out.exists()
+            def lines = out.readLines()
+            assert lines.size() == 1
+            assert lines[0] == "SAMPLE,CONDITION,VALUE"
+        }
+    }
+
+    test("merge left keeps all left rows and blank-fills unmatched right columns") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_b.tsv"
+                ops          = "merge"
+                merge_on     = "sample"
+                merge_how    = "left"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            assert lines[0] == "sample,condition,batch_x,batch_y,reads"
+            // header + all 5 sheet_a rows; sheet_b-only S6 must NOT appear
+            assert lines.size() == 6
+            assert lines.any { it == "S4,control,2,," }
+            assert lines.any { it == "S5,treated,1,," }
+            assert !lines.any { it.startsWith("S6,") }
+        }
+    }
+
+    test("drop_columns removes the requested column") {
+
+        when {
+            params {
+                samplesheet1      = "${projectDir}/test/testdata/sheet_a.csv"
+                ops               = "drop_columns"
+                drop_columns_cols = "batch"
+                outdir            = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            assert lines[0] == "sample,condition"
+            assert lines.size() == 6
+            assert lines.any { it == "S1,treated" }
+        }
+    }
+
+    test("dropna drops rows with a blank value in the given column") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_na.csv"
+                ops          = "dropna"
+                dropna_cols  = "condition"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            assert lines[0] == "sample,condition,batch"
+            // header + S1 + S3; S2 (blank condition) dropped
+            assert lines.size() == 3
+            assert !lines.any { it.startsWith("S2,") }
+        }
+    }
+
+    test("drop_duplicates keeps the first row per key") {
+
+        when {
+            params {
+                samplesheet1        = "${projectDir}/test/testdata/sheet_dupes.csv"
+                ops                 = "drop_duplicates"
+                drop_duplicates_cols = "batch"
+                outdir              = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            assert lines[0] == "sample,condition,batch"
+            // header + first-of-batch=1 (S1) + only row of batch=2 (S3); S2 (dup batch=1) dropped
+            assert lines.size() == 3
+            assert lines.any { it == "S1,treated,1" }
+            assert lines.any { it == "S3,treated,2" }
+            assert !lines.any { it.startsWith("S2,") }
+        }
+    }
+
+    test("filter keeps only rows matching the given value") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "filter"
+                filter_col   = "condition"
+                filter_op    = "eq"
+                filter_value = "treated"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            assert lines[0] == "sample,condition,batch"
+            assert lines.size() == 4
+            assert lines.every { it == lines[0] || it.contains("treated") }
+        }
+    }
+
+    test("output quotes a field value that contains the delimiter") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_notes.csv"
+                ops          = "filter"
+                filter_col   = "condition"
+                filter_op    = "ne"
+                filter_value = "nope"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            assert lines[0] == "sample,condition,notes"
+            assert lines.size() == 3
+            // the embedded comma must not shift columns onto a new field
+            assert lines.any { it == 'S1,treated,"has, a comma"' }
+            assert lines.any { it == "S2,control,plain" }
+        }
+    }
+
+    test("concat stacks both sheets and blank-fills missing columns, writing tsv") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_b.tsv"
+                ops          = "concat"
+                outdir       = "${launchDir}/results"
+                outname      = "samplesheet.tsv"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.tsv")
+            assert out.exists()
+            def lines = out.readLines()
+            assert lines[0] == "sample\tcondition\tbatch\treads"
+            // header + 5 rows from sheet_a + 4 rows from sheet_b
+            assert lines.size() == 10
+            assert lines.any { it == "S1\ttreated\t1\t" }
+            assert lines.any { it == "S6\t\t3\t500000" }
+        }
+    }
+
+    test("chained merge(left) + drop_columns + filter applies ops in order") {
+
+        when {
+            params {
+                samplesheet1      = "${projectDir}/test/testdata/sheet_a.csv"
+                samplesheet2      = "${projectDir}/test/testdata/sheet_b.tsv"
+                ops               = "merge,drop_columns,filter"
+                merge_on          = "sample"
+                merge_how         = "left"
+                drop_columns_cols = "batch_x,batch_y"
+                filter_col        = "condition"
+                filter_op         = "ne"
+                filter_value      = "control"
+                outdir            = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            assert lines[0] == "sample,condition,reads"
+            // only the 3 'treated' samples survive the filter
+            assert lines.size() == 4
+            assert lines.any { it == "S1,treated,1000000" }
+            assert lines.any { it == "S3,treated,1100000" }
+            assert lines.any { it == "S5,treated," }
+            assert !lines.any { it.startsWith("S2,") || it.startsWith("S4,") }
+        }
+    }
+}

@@ -1,0 +1,4 @@
+sample,condition,batch
+S1,treated,1
+S2,,1
+S3,treated,2
