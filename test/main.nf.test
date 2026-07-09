@@ -121,6 +121,101 @@ nextflow_pipeline {
         }
     }
 
+    test("rename substitutes column names, keeping order and values") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "rename"
+                rename_cols  = "sample=sample_id,batch=batch_id"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            assert lines[0] == "sample_id,condition,batch_id"
+            assert lines.size() == 6
+            assert lines.any { it == "S1,treated,1" }
+        }
+    }
+
+    test("rename errors on an unknown old column name") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "rename"
+                rename_cols  = "nope=whatever"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("Invalid rename_cols entry 'nope=whatever'") }
+        }
+    }
+
+    test("rename errors when the result would contain duplicate column names") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "rename"
+                rename_cols  = "sample=condition"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("rename_cols produces duplicate column name(s): condition") }
+        }
+    }
+
+    test("rename allows '=' inside old_key and new_key via longest known-column match") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "rename"
+                rename_cols  = "sample=sample=id"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            assert lines[0] == "sample=id,condition,batch"
+            assert lines.any { it == "S1,treated,1" }
+        }
+    }
+
+    test("rename handles an old_key that itself contains '=' via longest known-column match") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_equals.csv"
+                ops          = "rename"
+                rename_cols  = "sample=id=clean_id"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            assert lines[0] == "clean_id,condition"
+            assert lines.any { it == "S1,treated" }
+        }
+    }
+
     test("dropna drops rows with a blank value in the given column") {
 
         when {

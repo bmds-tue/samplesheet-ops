@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://raw.githubusercontent.com/bmds-tue/nf-meta-samplesheet-ops/main/nextflow_schema.json",
     "title": "nf-meta-samplesheet-ops pipeline parameters",
-    "description": "Generalized Nextflow adapter for pandas-style samplesheet/metadata operations (merge, drop, dropna, drop_duplicates, filter, concat) on one or two CSV/TSV samplesheets.",
+    "description": "Generalized Nextflow adapter for pandas-style samplesheet/metadata operations (merge, drop, select, rename, dropna, drop_duplicates, filter, concat) on one or two CSV/TSV samplesheets.",
     "type": "object",
     "$defs": {
         "input_output_options": {
@@ -35,10 +35,10 @@
                 "ops": {
                     "type": "string",
                     "description": "Ordered, comma-separated list of operations to apply left-to-right.",
-                    "help_text": "Allowed values: `merge`, `drop_columns`, `select_columns`, `dropna`, `drop_duplicates`, `filter`, `concat`. An op name can only appear once per run, e.g. `merge,drop_columns,filter`.",
-                    "pattern": "^(merge|drop_columns|select_columns|dropna|drop_duplicates|filter|concat)(,(merge|drop_columns|select_columns|dropna|drop_duplicates|filter|concat))*$",
+                    "help_text": "Allowed values: `merge`, `drop_columns`, `select_columns`, `rename`, `dropna`, `drop_duplicates`, `filter`, `concat`. An op name can only appear once per run, e.g. `merge,drop_columns,filter`.",
+                    "pattern": "^(merge|drop_columns|select_columns|rename|dropna|drop_duplicates|filter|concat)(,(merge|drop_columns|select_columns|rename|dropna|drop_duplicates|filter|concat))*$",
                     "fa_icon": "fas fa-list-ol",
-                    "errorMessage": "ops must be a comma-separated list made up only of: merge, drop_columns, select_columns, dropna, drop_duplicates, filter, concat."
+                    "errorMessage": "ops must be a comma-separated list made up only of: merge, drop_columns, select_columns, rename, dropna, drop_duplicates, filter, concat."
                 },
                 "outdir": {
                     "type": "string",
@@ -100,7 +100,7 @@
             "title": "drop options",
             "type": "object",
             "fa_icon": "fas fa-eraser",
-            "description": "Arguments for the 'drop_columns', 'select_columns', 'dropna', and 'drop_duplicates' ops.",
+            "description": "Arguments for the 'drop_columns', 'select_columns', 'rename', 'dropna', and 'drop_duplicates' ops.",
             "properties": {
                 "drop_columns_cols": {
                     "type": "string",
@@ -112,6 +112,14 @@
                     "description": "Comma-separated column names to keep, for the 'select_columns' op -- the inverse of drop_columns.",
                     "help_text": "All columns not listed are removed. The output column order follows the order given here. Errors if a listed column doesn't exist.",
                     "fa_icon": "fas fa-columns"
+                },
+                "rename_cols": {
+                    "type": "string",
+                    "description": "Comma-separated old_key=new_key pairs, for the 'rename' op, e.g. 'sample=sample_id,batch=batch_id'.",
+                    "help_text": "Column order is unchanged; only the listed names are substituted. old_key is matched against samplesheet1's actual column names (longest match wins), so old_key or new_key may themselves contain '=' -- only the outer comma is a hard separator. Errors if old_key doesn't match an existing column, or if the result would contain duplicate column names.",
+                    "pattern": "^[^,]*=[^,]*(,[^,]*=[^,]*)*$",
+                    "fa_icon": "fas fa-tag",
+                    "errorMessage": "rename_cols must be a comma-separated list of old_key=new_key pairs."
                 },
                 "dropna_cols": {
                     "type": "string",

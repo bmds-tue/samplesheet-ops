@@ -1,7 +1,7 @@
 # nf-meta-samplesheet-ops
 
 A single, reusable Nextflow connector for common samplesheet/metadata
-operations: merge/join, drop columns, drop rows (`dropna` / `drop_duplicates`), filter,
+operations: merge/join, drop/select/rename columns, drop rows (`dropna` / `drop_duplicates`), filter,
 and concat. Reads one or two CSV/TSV samplesheets, applies an ordered chain of
 operations, and writes the result as CSV or TSV. Implemented entirely with native
 Nextflow channel operators (`map`, `filter`, `join`, `groupTuple`, `mix`, `collectFile`)
@@ -56,6 +56,7 @@ columns (notes, descriptions, ...) round-trip safely.
 | `merge` | `merge_on` (default `sample`), `merge_how` (`inner`\|`left`, default `inner`), `merge_suffixes` (default `_x,_y`) | Joins `samplesheet1` (running state) with `samplesheet2` on a single shared key column. Overlapping non-key column names get suffixed per `merge_suffixes`. `left` keeps all left rows, blank-filling right-side columns when unmatched. |
 | `drop_columns` | `drop_columns_cols` (required) | Removes the given comma-separated columns. |
 | `select_columns` | `select_columns_cols` (required) | Inverse of `drop_columns`: keeps only the given comma-separated columns, in that order, and drops everything else. Errors if a listed column doesn't exist. |
+| `rename` | `rename_cols` (required) | Renames columns per a comma-separated `old_key=new_key,...` mapping. `old_key` is matched against samplesheet1's actual column names (longest match wins), so either side may itself contain `=` -- only the outer comma is a hard separator (column names containing a comma aren't representable, same limitation every other op's comma-separated param has). Column order is unchanged. Errors if `old_key` doesn't match an existing column, or if the result would contain duplicate column names. |
 | `dropna` | `dropna_cols` (default: all columns) | Drops rows where any of the given columns is blank. |
 | `drop_duplicates` | `drop_duplicates_cols` (default: all columns) | Deduplicates rows by the given column(s), keeping the first occurrence. |
 | `filter` | `filter_col` (required), `filter_op` (`eq`\|`ne`\|`contains`, default `eq`), `filter_value` (required) | Keeps rows where `filter_col` matches `filter_value` per `filter_op` (string comparison). |
