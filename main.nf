@@ -14,6 +14,8 @@ params.merge_on             = "sample"
 params.merge_how            = 'inner'
 params.merge_suffixes       = '_x,_y'
 params.drop_columns_cols    = null
+params.select_columns_cols  = null
+params.rename_cols          = null
 params.dropna_cols          = null
 params.drop_duplicates_cols = null
 params.filter_col           = null
@@ -21,7 +23,7 @@ params.filter_op            = 'eq'
 params.filter_value         = null
 
 def supportedOps() {
-    return ['merge', 'drop_columns', 'dropna', 'drop_duplicates', 'filter', 'concat']
+    return ['merge', 'drop_columns', 'select_columns', 'rename', 'dropna', 'drop_duplicates', 'filter', 'concat']
 }
 
 // Also used for the output file: the delimiter is derived from whichever path/name is passed in.
@@ -35,6 +37,27 @@ def detectSep(path) {
 def splitList(s) {
     if (!s) return []
     return s.split(',')*.trim()
+}
+
+// Parses "old=new,old2=new2" into an ordered old->new map. old_key is matched against
+// known column names (longest match wins) rather than split on a fixed character, so
+// old_key itself may contain '=' -- only new_key's content is taken verbatim after the
+// separator, which is why it can contain '=' too without any escaping.
+def parseRenameMap(s, cols) {
+    def sep = '='
+    def map = [:]
+    splitList(s).each { pair ->
+        def oldKey = cols.findAll { c -> pair.startsWith(c) }.max { it.length() }
+        def rest = oldKey ? pair.substring(oldKey.length()).trim() : ''
+        if (!oldKey || !rest.startsWith(sep)) {
+            error "Invalid rename_cols entry '${pair}' -- expected 'old_key${sep}new_key' where old_key is an existing column name immediately followed by '${sep}'"
+        }
+        def newKey = rest.substring(1).trim()
+        if (!newKey) error "Invalid rename_cols entry '${pair}' -- new_key must not be empty"
+        if (map.containsKey(oldKey)) error "rename_cols specifies old column '${oldKey}' more than once"
+        map[oldKey] = newKey
+    }
+    return map
 }
 
 // Quotes a single output field if it contains the delimiter, the quote character,
@@ -58,6 +81,25 @@ def applyOp(op, ch, cols, sheet2Rows, sheet2Cols, opParams) {
         def dropCols = splitList(opParams.drop_columns_cols)
         if (!dropCols) error "drop_columns_cols is required for the 'drop_columns' op"
         return [ ch.map { row -> row.findAll { k, v -> !(k in dropCols) } }, cols - dropCols ]
+    }
+
+    if (op == 'select_columns') {
+        def keepCols = splitList(opParams.select_columns_cols)
+        if (!keepCols) error "select_columns_cols is required for the 'select_columns' op"
+        def missing = keepCols - cols
+        if (missing) error "select_columns_cols references unknown column(s): ${missing.join(', ')}"
+        return [ ch.map { row -> row.subMap(keepCols) }, keepCols ]
+    }
+
+    if (op == 'rename') {
+        if (!opParams.rename_cols) error "rename_cols is required for the 'rename' op"
+        def renameMap = parseRenameMap(opParams.rename_cols, cols)
+        def newCols = cols.collect { c -> renameMap.containsKey(c) ? renameMap[c] : c }
+        def dupes = newCols.findAll { c -> newCols.count(c) > 1 }.unique()
+        if (dupes) error "rename_cols produces duplicate column name(s): ${dupes.join(', ')}"
+        return [ ch.map { row ->
+            row.collectEntries { k, v -> [renameMap.containsKey(k) ? renameMap[k] : k, v] }
+        }, newCols ]
     }
 
     if (op == 'dropna') {
@@ -156,6 +198,8 @@ workflow SAMPLESHEET_OPS {
     merge_how
     merge_suffixes
     drop_columns_cols
+    select_columns_cols
+    rename_cols
     dropna_cols
     drop_duplicates_cols
     filter_col
@@ -190,6 +234,8 @@ workflow SAMPLESHEET_OPS {
         merge_how           : merge_how,
         merge_suffixes      : merge_suffixes,
         drop_columns_cols   : drop_columns_cols,
+        select_columns_cols : select_columns_cols,
+        rename_cols         : rename_cols,
         dropna_cols         : dropna_cols,
         drop_duplicates_cols: drop_duplicates_cols,
         filter_col          : filter_col,
@@ -240,6 +286,8 @@ workflow {
         params.merge_how,
         params.merge_suffixes,
         params.drop_columns_cols,
+        params.select_columns_cols,
+        params.rename_cols,
         params.dropna_cols,
         params.drop_duplicates_cols,
         params.filter_col,
