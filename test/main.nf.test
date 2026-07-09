@@ -100,6 +100,27 @@ nextflow_pipeline {
         }
     }
 
+    test("select_columns keeps only the requested columns, in the requested order") {
+
+        when {
+            params {
+                samplesheet1        = "${projectDir}/test/testdata/sheet_a.csv"
+                ops                 = "select_columns"
+                select_columns_cols = "batch,sample"
+                outdir              = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            assert lines[0] == "batch,sample"
+            assert lines.size() == 6
+            assert lines.any { it == "1,S1" }
+        }
+    }
+
     test("dropna drops rows with a blank value in the given column") {
 
         when {

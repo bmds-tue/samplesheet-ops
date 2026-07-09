@@ -14,6 +14,7 @@ params.merge_on             = "sample"
 params.merge_how            = 'inner'
 params.merge_suffixes       = '_x,_y'
 params.drop_columns_cols    = null
+params.select_columns_cols  = null
 params.dropna_cols          = null
 params.drop_duplicates_cols = null
 params.filter_col           = null
@@ -21,7 +22,7 @@ params.filter_op            = 'eq'
 params.filter_value         = null
 
 def supportedOps() {
-    return ['merge', 'drop_columns', 'dropna', 'drop_duplicates', 'filter', 'concat']
+    return ['merge', 'drop_columns', 'select_columns', 'dropna', 'drop_duplicates', 'filter', 'concat']
 }
 
 // Also used for the output file: the delimiter is derived from whichever path/name is passed in.
@@ -58,6 +59,14 @@ def applyOp(op, ch, cols, sheet2Rows, sheet2Cols, opParams) {
         def dropCols = splitList(opParams.drop_columns_cols)
         if (!dropCols) error "drop_columns_cols is required for the 'drop_columns' op"
         return [ ch.map { row -> row.findAll { k, v -> !(k in dropCols) } }, cols - dropCols ]
+    }
+
+    if (op == 'select_columns') {
+        def keepCols = splitList(opParams.select_columns_cols)
+        if (!keepCols) error "select_columns_cols is required for the 'select_columns' op"
+        def missing = keepCols - cols
+        if (missing) error "select_columns_cols references unknown column(s): ${missing.join(', ')}"
+        return [ ch.map { row -> row.subMap(keepCols) }, keepCols ]
     }
 
     if (op == 'dropna') {
@@ -156,6 +165,7 @@ workflow SAMPLESHEET_OPS {
     merge_how
     merge_suffixes
     drop_columns_cols
+    select_columns_cols
     dropna_cols
     drop_duplicates_cols
     filter_col
@@ -190,6 +200,7 @@ workflow SAMPLESHEET_OPS {
         merge_how           : merge_how,
         merge_suffixes      : merge_suffixes,
         drop_columns_cols   : drop_columns_cols,
+        select_columns_cols : select_columns_cols,
         dropna_cols         : dropna_cols,
         drop_duplicates_cols: drop_duplicates_cols,
         filter_col          : filter_col,
@@ -240,6 +251,7 @@ workflow {
         params.merge_how,
         params.merge_suffixes,
         params.drop_columns_cols,
+        params.select_columns_cols,
         params.dropna_cols,
         params.drop_duplicates_cols,
         params.filter_col,

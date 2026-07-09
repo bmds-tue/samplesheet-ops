@@ -35,10 +35,10 @@
                 "ops": {
                     "type": "string",
                     "description": "Ordered, comma-separated list of operations to apply left-to-right.",
-                    "help_text": "Allowed values: `merge`, `drop_columns`, `dropna`, `drop_duplicates`, `filter`, `concat`. An op name can only appear once per run, e.g. `merge,drop_columns,filter`.",
-                    "pattern": "^(merge|drop_columns|dropna|drop_duplicates|filter|concat)(,(merge|drop_columns|dropna|drop_duplicates|filter|concat))*$",
+                    "help_text": "Allowed values: `merge`, `drop_columns`, `select_columns`, `dropna`, `drop_duplicates`, `filter`, `concat`. An op name can only appear once per run, e.g. `merge,drop_columns,filter`.",
+                    "pattern": "^(merge|drop_columns|select_columns|dropna|drop_duplicates|filter|concat)(,(merge|drop_columns|select_columns|dropna|drop_duplicates|filter|concat))*$",
                     "fa_icon": "fas fa-list-ol",
-                    "errorMessage": "ops must be a comma-separated list made up only of: merge, drop_columns, dropna, drop_duplicates, filter, concat."
+                    "errorMessage": "ops must be a comma-separated list made up only of: merge, drop_columns, select_columns, dropna, drop_duplicates, filter, concat."
                 },
                 "outdir": {
                     "type": "string",
@@ -100,11 +100,17 @@
             "title": "drop options",
             "type": "object",
             "fa_icon": "fas fa-eraser",
-            "description": "Arguments for the 'drop_columns', 'dropna', and 'drop_duplicates' ops.",
+            "description": "Arguments for the 'drop_columns', 'select_columns', 'dropna', and 'drop_duplicates' ops.",
             "properties": {
                 "drop_columns_cols": {
                     "type": "string",
                     "description": "Comma-separated column names to remove, for the 'drop_columns' op.",
+                    "fa_icon": "fas fa-columns"
+                },
+                "select_columns_cols": {
+                    "type": "string",
+                    "description": "Comma-separated column names to keep, for the 'select_columns' op -- the inverse of drop_columns.",
+                    "help_text": "All columns not listed are removed. The output column order follows the order given here. Errors if a listed column doesn't exist.",
                     "fa_icon": "fas fa-columns"
                 },
                 "dropna_cols": {
