@@ -63,6 +63,13 @@
                     "maxLength": 1,
                     "description": "Quote character used both when parsing input CSV/TSV and when quoting output fields.",
                     "fa_icon": "fas fa-quote-right"
+                },
+                "drop_header": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Omit the header row from the output samplesheet.",
+                    "help_text": "Output-only: input parsing always treats the first line of samplesheet1/samplesheet2 as the header, regardless of this setting -- every op binds columns by name. When true and the result has zero rows, the output file is empty (0 bytes) rather than header-only.",
+                    "fa_icon": "fas fa-heading"
                 }
             }
         },

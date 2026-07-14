@@ -335,6 +335,53 @@ nextflow_pipeline {
         }
     }
 
+    test("drop_header omits the header row from a non-empty result") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "filter"
+                filter_col   = "condition"
+                filter_op    = "eq"
+                filter_value = "treated"
+                drop_header  = true
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            def lines = out.readLines()
+            // no header line -- just the 3 'treated' rows
+            assert lines.size() == 3
+            assert !lines.any { it == "sample,condition,batch" }
+            assert lines.every { it.contains("treated") }
+        }
+    }
+
+    test("drop_header with zero matching rows writes an empty file") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_upper.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_nomatch.csv"
+                ops          = "merge"
+                merge_on     = "SAMPLE"
+                merge_how    = "inner"
+                drop_header  = true
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            assert out.exists()
+            assert out.size() == 0
+        }
+    }
+
     test("chained merge(left) + drop_columns + filter applies ops in order") {
 
         when {
