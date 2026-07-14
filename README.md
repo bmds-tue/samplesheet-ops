@@ -98,3 +98,13 @@ nextflow run main.nf --helpFull    # include hidden/advanced params too
 ```bash
 nf-test test test/main.nf.test
 ```
+
+## Planned
+
+**`collect` op** — seed a samplesheet from a directory listing instead of an existing
+CSV/TSV, e.g. `--collect_pattern '/foo/bar/*.tsv'`. Valid only as the first op in the
+chain (mutually exclusive with `samplesheet1` for that run), producing a minimal
+`path`/`filename`-column sheet, deterministically sorted, that the rest of the chain
+(`rename`, `merge`, ...) can shape further. Deliberately scoped to a flat file list —
+no filename-pattern sample-ID extraction or R1/R2 pairing, since that's convention-specific
+glue better suited to a dedicated per-transition adapter than this general-purpose one.
