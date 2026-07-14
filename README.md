@@ -40,6 +40,7 @@ the chain transform `samplesheet1`'s running state only, not `samplesheet2` itse
 | `outdir` | (required) | Directory the output samplesheet is written to. |
 | `outname` | `samplesheet.csv` | Output filename, including extension. |
 | `quote` | `"` | Quote character used both when parsing input CSV/TSV and when quoting output fields. |
+| `drop_header` | `false` | Omit the header row from the output samplesheet. Output-only -- input parsing always assumes a header, since every op binds columns by name. If the result has zero rows, the output file is empty (0 bytes) rather than header-only. |
 
 Both input and output delimiters are auto-detected from a file's extension (`.csv` →
 comma, `.tsv`/`.tab` → tab) — `outname`'s extension is what controls the output

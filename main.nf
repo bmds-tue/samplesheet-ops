@@ -9,6 +9,7 @@ params.ops                  = null
 params.outdir               = null
 params.outname              = 'samplesheet.csv'
 params.quote                = '"'
+params.drop_header          = false
 
 params.merge_on             = "sample"
 params.merge_how            = 'inner'
@@ -194,6 +195,7 @@ workflow SAMPLESHEET_OPS {
     outdir
     outname
     quote
+    drop_header
     merge_on
     merge_how
     merge_suffixes
@@ -257,10 +259,10 @@ workflow SAMPLESHEET_OPS {
         .collect()
         .ifEmpty([])   // collect() on an empty channel emits nothing at all -- force one [] so the header still gets written
         .map { rows ->
-            if (!rows) return finalCols.collect { c -> csvQuote(c, outSep, quote) }.join(outSep) + '\n'
-            def header = rows[0].keySet().collect { c -> csvQuote(c, outSep, quote) }.join(outSep)
-            def body   = rows.collect { r -> r.values().collect { v -> csvQuote(v, outSep, quote) }.join(outSep) }.join('\n')
-            header + '\n' + body + '\n'
+            def headerLine = drop_header ? '' : finalCols.collect { c -> csvQuote(c, outSep, quote) }.join(outSep) + '\n'
+            if (!rows) return headerLine
+            def body = rows.collect { r -> r.values().collect { v -> csvQuote(v, outSep, quote) }.join(outSep) }.join('\n')
+            headerLine + body + '\n'
         }
         .collectFile(name: outname, storeDir: outdir)
 
@@ -282,6 +284,7 @@ workflow {
         params.outdir,
         params.outname,
         params.quote,
+        params.drop_header,
         params.merge_on,
         params.merge_how,
         params.merge_suffixes,
