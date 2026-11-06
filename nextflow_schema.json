@@ -10,12 +10,16 @@
             "type": "object",
             "fa_icon": "fas fa-terminal",
             "description": "Samplesheet inputs, the ordered operation chain, and where/how the result is written.",
-            "required": ["samplesheet1", "ops", "outdir"],
+            "required": [
+                "samplesheet1",
+                "ops",
+                "outdir"
+            ],
             "properties": {
                 "samplesheet1": {
                     "type": "string",
                     "description": "Path to the primary CSV/TSV samplesheet.",
-                    "help_text": "This is the samplesheet that the operation chain runs against, starting as-is and getting transformed op by op. Delimiter is auto-detected from the file extension.",
+                    "help_text": "This is the samplesheet that the operation chain runs against, starting as-is and getting transformed op by op. Delimiter is auto-detected from the file extension. The first line must be a header with unique, non-repeated column names (duplicates fail the run, since every op binds columns by name). A header-only file (zero data rows) is valid; a completely empty file is not.",
                     "format": "file-path",
                     "exists": true,
                     "pattern": "^\\S+\\.(csv|tsv|tab)$",
@@ -25,7 +29,7 @@
                 "samplesheet2": {
                     "type": "string",
                     "description": "Path to the second CSV/TSV samplesheet.",
-                    "help_text": "Required only when `--ops` includes `merge` or `concat`. Always read fresh -- it is not itself transformed by earlier ops in the chain, only samplesheet1's running state is.",
+                    "help_text": "Required only when `--ops` includes `merge` or `concat`. Always read fresh -- it is not itself transformed by earlier ops in the chain, only samplesheet1's running state is. Same header rules as samplesheet1: unique column names, header-only allowed, empty file rejected.",
                     "format": "file-path",
                     "exists": true,
                     "pattern": "^\\S+\\.(csv|tsv|tab)$",
@@ -35,7 +39,7 @@
                 "ops": {
                     "type": "string",
                     "description": "Ordered, comma-separated list of operations to apply left-to-right.",
-                    "help_text": "Allowed values: `merge`, `drop_columns`, `select_columns`, `rename`, `dropna`, `drop_duplicates`, `filter`, `concat`. An op name can only appear once per run, e.g. `merge,drop_columns,filter`.",
+                    "help_text": "Allowed values: `merge`, `drop_columns`, `select_columns`, `rename`, `dropna`, `drop_duplicates`, `filter`, `concat`. Ops apply left-to-right, e.g. `merge,drop_columns,filter`. Each op may appear at most once per run -- listing one twice fails the run.",
                     "pattern": "^(merge|drop_columns|select_columns|rename|dropna|drop_duplicates|filter|concat)(,(merge|drop_columns|select_columns|rename|dropna|drop_duplicates|filter|concat))*$",
                     "fa_icon": "fas fa-list-ol",
                     "errorMessage": "ops must be a comma-separated list made up only of: merge, drop_columns, select_columns, rename, dropna, drop_duplicates, filter, concat."
@@ -45,7 +49,8 @@
                     "format": "directory-path",
                     "minLength": 1,
                     "description": "Directory the output samplesheet is written to.",
-                    "fa_icon": "fas fa-folder-open"
+                    "fa_icon": "fas fa-folder-open",
+                    "help_text": "Created if it doesn't exist. The file is written as `<outdir>/<outname>`."
                 },
                 "outname": {
                     "type": "string",
@@ -62,7 +67,8 @@
                     "minLength": 1,
                     "maxLength": 1,
                     "description": "Quote character used both when parsing input CSV/TSV and when quoting output fields.",
-                    "fa_icon": "fas fa-quote-right"
+                    "fa_icon": "fas fa-quote-right",
+                    "help_text": "Used both to parse quoted fields in samplesheet1/samplesheet2 and to quote output fields. An output field is quoted when it contains the output delimiter, the quote character, or a newline; embedded quote characters are doubled (RFC4180-style)."
                 },
                 "drop_header": {
                     "type": "boolean",
@@ -83,14 +89,18 @@
                     "type": "string",
                     "default": "sample",
                     "description": "Single shared key column present in both sheets to join on.",
-                    "fa_icon": "fas fa-key"
+                    "fa_icon": "fas fa-key",
+                    "help_text": "Must exist in both samplesheet1's running state and samplesheet2. Keys are compared as exact strings. Repeated keys are allowed on either side: every left row is paired with every matching right row (like a SQL/pandas join), and output rows follow samplesheet1's row order."
                 },
                 "merge_how": {
                     "type": "string",
                     "default": "inner",
-                    "enum": ["inner", "left"],
+                    "enum": [
+                        "inner",
+                        "left"
+                    ],
                     "description": "Join type.",
-                    "help_text": "`inner` keeps only matching rows. `left` keeps all rows from samplesheet1's running state, blank-filling samplesheet2's columns when unmatched.",
+                    "help_text": "`inner` keeps only left rows that have at least one match in samplesheet2. `left` keeps all rows from samplesheet1's running state, blank-filling samplesheet2's columns when a row is unmatched. samplesheet2-only rows are never output.",
                     "fa_icon": "fas fa-object-group"
                 },
                 "merge_suffixes": {
@@ -99,12 +109,13 @@
                     "pattern": "^[^,]+,[^,]+$",
                     "description": "Comma-separated pair of suffixes applied to overlapping non-key column names from (samplesheet1, samplesheet2) respectively.",
                     "fa_icon": "fas fa-clone",
-                    "errorMessage": "merge_suffixes must be exactly two non-empty, comma-separated values."
+                    "errorMessage": "merge_suffixes must be exactly two non-empty, comma-separated values.",
+                    "help_text": "Only columns present in both sheets (other than merge_on) are suffixed; all other names are kept as-is. The run fails if a suffixed name collides with an existing column (e.g. merging `batch` into a sheet that already has `batch_x`)."
                 }
             }
         },
         "drop_options": {
-            "title": "drop options",
+            "title": "Column and row options",
             "type": "object",
             "fa_icon": "fas fa-eraser",
             "description": "Arguments for the 'drop_columns', 'select_columns', 'rename', 'dropna', and 'drop_duplicates' ops.",
@@ -112,12 +123,13 @@
                 "drop_columns_cols": {
                     "type": "string",
                     "description": "Comma-separated column names to remove, for the 'drop_columns' op.",
-                    "fa_icon": "fas fa-columns"
+                    "fa_icon": "fas fa-columns",
+                    "help_text": "Required by the 'drop_columns' op. Errors if a listed column doesn't exist."
                 },
                 "select_columns_cols": {
                     "type": "string",
                     "description": "Comma-separated column names to keep, for the 'select_columns' op -- the inverse of drop_columns.",
-                    "help_text": "All columns not listed are removed. The output column order follows the order given here. Errors if a listed column doesn't exist.",
+                    "help_text": "Required by the 'select_columns' op. All columns not listed are removed. The output column order follows the order given here. Errors if a listed column doesn't exist or is listed more than once.",
                     "fa_icon": "fas fa-columns"
                 },
                 "rename_cols": {
@@ -131,13 +143,13 @@
                 "dropna_cols": {
                     "type": "string",
                     "description": "Comma-separated subset of columns to check for blank values, for the 'dropna' op.",
-                    "help_text": "Defaults to checking all columns if not set. A row is dropped if any of the listed columns is blank.",
+                    "help_text": "Defaults to checking all columns if not set. A row is dropped if any of the listed columns is blank (empty or whitespace-only). Errors if a listed column doesn't exist.",
                     "fa_icon": "fas fa-eraser"
                 },
                 "drop_duplicates_cols": {
                     "type": "string",
                     "description": "Comma-separated subset of columns forming the dedup key, for the 'drop_duplicates' op.",
-                    "help_text": "Defaults to all columns if not set. Keeps the first occurrence per key.",
+                    "help_text": "Defaults to all columns if not set. Values are compared column by column as exact strings. Keeps the first occurrence per key and preserves the input row order. Errors if a listed column doesn't exist.",
                     "fa_icon": "fas fa-copy"
                 }
             }
@@ -151,19 +163,26 @@
                 "filter_col": {
                     "type": "string",
                     "description": "Column to test, for the 'filter' op.",
-                    "fa_icon": "fas fa-columns"
+                    "fa_icon": "fas fa-columns",
+                    "help_text": "Required by the 'filter' op. Errors if the column doesn't exist, rather than silently matching nothing (or everything)."
                 },
                 "filter_op": {
                     "type": "string",
                     "default": "eq",
-                    "enum": ["eq", "ne", "contains"],
+                    "enum": [
+                        "eq",
+                        "ne",
+                        "contains"
+                    ],
                     "description": "Comparison operator used against filter_value.",
-                    "fa_icon": "fas fa-equals"
+                    "fa_icon": "fas fa-equals",
+                    "help_text": "`eq`: value equals filter_value. `ne`: value differs from filter_value. `contains`: value contains filter_value as a substring. All comparisons are case-sensitive string comparisons; a blank cell compares as the empty string."
                 },
                 "filter_value": {
                     "type": "string",
                     "description": "Value to compare filter_col against, for the 'filter' op.",
-                    "fa_icon": "fas fa-font"
+                    "fa_icon": "fas fa-font",
+                    "help_text": "Required by the 'filter' op. Always compared as a string, so `1` and `1.0` are different values."
                 }
             }
         },
@@ -183,10 +202,20 @@
         }
     },
     "allOf": [
-        {"$ref": "#/$defs/input_output_options"},
-        {"$ref": "#/$defs/merge_options"},
-        {"$ref": "#/$defs/drop_options"},
-        {"$ref": "#/$defs/filter_options"},
-        {"$ref": "#/$defs/generic_options"}
+        {
+            "$ref": "#/$defs/input_output_options"
+        },
+        {
+            "$ref": "#/$defs/merge_options"
+        },
+        {
+            "$ref": "#/$defs/drop_options"
+        },
+        {
+            "$ref": "#/$defs/filter_options"
+        },
+        {
+            "$ref": "#/$defs/generic_options"
+        }
     ]
 }
