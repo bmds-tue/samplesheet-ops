@@ -37,7 +37,47 @@ def detectSep(path) {
 
 def splitList(s) {
     if (!s) return []
-    return s.split(',')*.trim()
+    return s.toString().split(',')*.trim()
+}
+
+def duplicatesOf(list) {
+    return list.findAll { x -> list.count(x) > 1 }.unique()
+}
+
+// Errors if any of `wanted` isn't a current column. `param` names the offending param
+// so a typo fails loudly instead of silently matching nothing (or everything).
+def requireColumns(wanted, cols, param) {
+    def missing = wanted - cols
+    if (missing) error "${param} references unknown column(s): ${missing.join(', ')} -- available columns: ${cols.join(', ')}"
+}
+
+// SAMPLESHEET_OPS takes plain values, not channels. Booleans may also arrive as strings
+// (e.g. from a config or another samplesheet), so 'false' must not be truthy.
+def asBoolean(value, name) {
+    if (value == null) return false
+    if (value instanceof Boolean) return value
+    if (value instanceof CharSequence) {
+        def s = value.toString().trim().toLowerCase()
+        if (s in ['true', 'yes', '1'])      return true
+        if (s in ['false', 'no', '0', '']) return false
+    }
+    error "${name} must be a boolean (true/false), got '${value}' (${value.getClass().simpleName}) -- SAMPLESHEET_OPS takes plain values, not channels"
+}
+
+// Reads a CSV/TSV into [columns, rows]. The header is parsed on its own so that
+// (a) a header-only file still yields its column list, and (b) duplicate column
+// names are caught -- splitCsv(header: true) would otherwise silently collapse them
+// into a single map key and lose data.
+def readSheet(path, quote, label) {
+    def f   = file(path, checkIfExists: true)
+    def sep = detectSep(path)
+    def headerRows = f.splitCsv(header: false, sep: sep, quote: quote, limit: 1)
+    if (!headerRows) error "${label} '${path}' is empty -- expected at least a header line"
+    def cols  = headerRows[0].collect { it == null ? '' : it.toString() }
+    def dupes = duplicatesOf(cols)
+    if (dupes) error "${label} '${path}' has duplicate column name(s): ${dupes.join(', ')} -- column names must be unique"
+    def rows = f.splitCsv(header: true, sep: sep, quote: quote)
+    return [cols, rows]
 }
 
 // Parses "old=new,old2=new2" into an ordered old->new map. old_key is matched against
@@ -81,14 +121,16 @@ def applyOp(op, ch, cols, sheet2Rows, sheet2Cols, opParams) {
     if (op == 'drop_columns') {
         def dropCols = splitList(opParams.drop_columns_cols)
         if (!dropCols) error "drop_columns_cols is required for the 'drop_columns' op"
+        requireColumns(dropCols, cols, 'drop_columns_cols')
         return [ ch.map { row -> row.findAll { k, v -> !(k in dropCols) } }, cols - dropCols ]
     }
 
     if (op == 'select_columns') {
         def keepCols = splitList(opParams.select_columns_cols)
         if (!keepCols) error "select_columns_cols is required for the 'select_columns' op"
-        def missing = keepCols - cols
-        if (missing) error "select_columns_cols references unknown column(s): ${missing.join(', ')}"
+        requireColumns(keepCols, cols, 'select_columns_cols')
+        def repeated = duplicatesOf(keepCols)
+        if (repeated) error "select_columns_cols lists column(s) more than once: ${repeated.join(', ')}"
         return [ ch.map { row -> row.subMap(keepCols) }, keepCols ]
     }
 
@@ -96,7 +138,7 @@ def applyOp(op, ch, cols, sheet2Rows, sheet2Cols, opParams) {
         if (!opParams.rename_cols) error "rename_cols is required for the 'rename' op"
         def renameMap = parseRenameMap(opParams.rename_cols, cols)
         def newCols = cols.collect { c -> renameMap.containsKey(c) ? renameMap[c] : c }
-        def dupes = newCols.findAll { c -> newCols.count(c) > 1 }.unique()
+        def dupes = duplicatesOf(newCols)
         if (dupes) error "rename_cols produces duplicate column name(s): ${dupes.join(', ')}"
         return [ ch.map { row ->
             row.collectEntries { k, v -> [renameMap.containsKey(k) ? renameMap[k] : k, v] }
@@ -105,38 +147,38 @@ def applyOp(op, ch, cols, sheet2Rows, sheet2Cols, opParams) {
 
     if (op == 'dropna') {
         def naCols = splitList(opParams.dropna_cols) ?: cols
+        requireColumns(naCols, cols, 'dropna_cols')
         return [ ch.filter { row -> naCols.every { c -> row[c]?.toString()?.trim() } }, cols ]
     }
 
     if (op == 'drop_duplicates') {
         def dedupCols = splitList(opParams.drop_duplicates_cols) ?: cols
-        def dedupedCh = ch
-            .map { row -> tuple(dedupCols.collect { row[it] }.join(''), row) }
-            .groupTuple()
-            .map { key, rows -> rows[0] }
+        requireColumns(dedupCols, cols, 'drop_duplicates_cols')
+        // unique() compares the key *list* (no string concatenation, so ('ab','c') and
+        // ('a','bc') stay distinct) and streams in arrival order, keeping the first occurrence.
+        def dedupedCh = ch.unique { row -> dedupCols.collect { c -> row[c] } }
         return [ dedupedCh, cols ]
     }
 
     if (op == 'filter') {
         def col   = opParams.filter_col
         def fop   = opParams.filter_op ?: 'eq'
-        def value = opParams.filter_value
+        def value = opParams.filter_value == null ? null : opParams.filter_value.toString()
         if (!col)           error "filter_col is required for the 'filter' op"
         if (value == null)  error "filter_value is required for the 'filter' op"
+        if (!(fop in ['eq', 'ne', 'contains'])) error "Unknown filter_op '${fop}' -- expected 'eq', 'ne', or 'contains'"
+        requireColumns([col], cols, 'filter_col')
         def filteredCh = ch.filter { row ->
-            def v = row[col]?.toString()
-            if (fop == 'eq')       return v == value
-            if (fop == 'ne')       return v != value
-            if (fop == 'contains') return v?.contains(value)
-            error "Unknown filter_op '${fop}' -- expected 'eq', 'ne', or 'contains'"
+            def v = row[col] == null ? '' : row[col].toString()
+            if (fop == 'eq') return v == value
+            if (fop == 'ne') return v != value
+            return v.contains(value)
         }
         return [ filteredCh, cols ]
     }
 
     if (op == 'merge') {
         def on = opParams.merge_on
-        print(cols)
-        print(sheet2Cols)
         if (!on) error "merge_on is required for the 'merge' op"
         if (!(on in cols))       error "merge_on '${on}' not found in samplesheet1's columns"
         if (!(on in sheet2Cols)) error "merge_on '${on}' not found in samplesheet2's columns"
@@ -150,30 +192,31 @@ def applyOp(op, ch, cols, sheet2Rows, sheet2Cols, opParams) {
         def rightCols = sheet2Cols - on
         def overlap   = leftCols.intersect(rightCols)
 
-        def leftCh  = ch.map { row -> tuple(row[on], row) }
-        def rightCh = channel.fromList(sheet2Rows.collect { row -> tuple(row[on], row) })
+        if (!(how in ['inner', 'left'])) error "Unknown merge_how '${how}' -- expected 'inner' or 'left'"
 
+        // .toString(): GString keys would not match String lookups when writing the output.
+        def leftName  = { k -> (overlap.contains(k) ? "${k}${lSuf}" : k).toString() }
+        def rightName = { k -> (overlap.contains(k) ? "${k}${rSuf}" : k).toString() }
+        def newCols   = [on] + leftCols.collect(leftName) + rightCols.collect(rightName)
+        def clashes   = duplicatesOf(newCols)
+        if (clashes) error "merge would produce duplicate column name(s): ${clashes.join(', ')} -- choose different merge_suffixes or rename/drop the clashing columns first"
+
+        // samplesheet2 is already fully in memory, so index it by key and look matches up
+        // per left row. Unlike channel join() (which pairs one item per key), this handles
+        // repeated keys on either side -- every left row gets every matching right row --
+        // and keeps the left sheet's row order.
+        def rightIndex = sheet2Rows.groupBy { row -> row[on] }
         def mergeRow = { l, r ->
             def out = [(on): l[on]]
-            leftCols.each  { k -> out[ overlap.contains(k) ? "${k}${lSuf}" : k ] = l[k] }
-            rightCols.each { k -> out[ overlap.contains(k) ? "${k}${rSuf}" : k ] = r ? r[k] : '' }
+            leftCols.each  { k -> out[leftName.call(k)]  = l[k] }
+            rightCols.each { k -> out[rightName.call(k)] = r ? r[k] : '' }
             out
         }
-
-        def mergedCh
-        if (how == 'inner') {
-            mergedCh = leftCh.join(rightCh).map { key, l, r -> mergeRow.call(l, r) }
-        } else if (how == 'left') {
-            mergedCh = leftCh.join(rightCh, remainder: true)
-                .filter { key, l, r -> l != null }   // drop right-only remainder rows to keep left-join semantics
-                .map    { key, l, r -> mergeRow.call(l, r) }
-        } else {
-            error "Unknown merge_how '${how}' -- expected 'inner' or 'left'"
+        def mergedCh = ch.flatMap { l ->
+            def matches = rightIndex[l[on]] ?: []
+            if (!matches && how == 'left') return [mergeRow.call(l, null)]
+            return matches.collect { r -> mergeRow.call(l, r) }
         }
-
-        def newCols = [on] +
-            leftCols.collect  { overlap.contains(it) ? "${it}${lSuf}" : it } +
-            rightCols.collect { overlap.contains(it) ? "${it}${rSuf}" : it }
         return [ mergedCh, newCols ]
     }
 
@@ -181,7 +224,8 @@ def applyOp(op, ch, cols, sheet2Rows, sheet2Cols, opParams) {
         def allCols = (cols + sheet2Cols).unique()
         def fillRow = { row -> allCols.collectEntries { c -> [c, row.containsKey(c) ? (row[c] ?: '') : ''] } }
         def rightCh = channel.fromList(sheet2Rows).map(fillRow)
-        return [ ch.map(fillRow).mix(rightCh), allCols ]
+        // concat (not mix) so samplesheet1's rows always come before samplesheet2's
+        return [ ch.map(fillRow).concat(rightCh), allCols ]
     }
 
     error "Unknown op '${op}' -- expected one of: ${supportedOps().join(', ')}"
@@ -216,19 +260,20 @@ workflow SAMPLESHEET_OPS {
     def opsList = splitList(ops)
     def unknown = opsList - supportedOps()
     if (unknown) error "Unknown op(s) in ops: ${unknown.join(', ')} -- expected one of: ${supportedOps().join(', ')}"
+    def repeatedOps = duplicatesOf(opsList)
+    if (repeatedOps) error "ops lists op(s) more than once: ${repeatedOps.join(', ')} -- each op may appear only once per run"
 
-    def sheet1Rows = file(samplesheet1, checkIfExists: true)
-        .splitCsv(header: true, sep: detectSep(samplesheet1), quote: quote)
-    def cols = sheet1Rows ? (sheet1Rows[0].keySet() as List) : []
+    def dropHeader = asBoolean(drop_header, 'drop_header')
+    def outSep     = detectSep(outname)   // validate outname before doing any work
+
+    def (cols, sheet1Rows) = readSheet(samplesheet1, quote, 'samplesheet1')
 
     def needsSheet2 = opsList.any { it in ['merge', 'concat'] }
     def sheet2Rows = []
     def sheet2Cols = []
     if (needsSheet2) {
         if (!samplesheet2) error "samplesheet2 is required when ops includes 'merge' or 'concat'"
-        sheet2Rows = file(samplesheet2, checkIfExists: true)
-            .splitCsv(header: true, sep: detectSep(samplesheet2), quote: quote)
-        sheet2Cols = sheet2Rows ? (sheet2Rows[0].keySet() as List) : []
+        (sheet2Cols, sheet2Rows) = readSheet(samplesheet2, quote, 'samplesheet2')
     }
 
     def opParams = [
@@ -253,15 +298,15 @@ workflow SAMPLESHEET_OPS {
     def finalCh   = result[0]
     def finalCols = result[1]
 
-    def outSep = detectSep(outname)
-
     def outCh = finalCh
         .collect()
         .ifEmpty([])   // collect() on an empty channel emits nothing at all -- force one [] so the header still gets written
         .map { rows ->
-            def headerLine = drop_header ? '' : finalCols.collect { c -> csvQuote(c, outSep, quote) }.join(outSep) + '\n'
+            def headerLine = dropHeader ? '' : finalCols.collect { c -> csvQuote(c, outSep, quote) }.join(outSep) + '\n'
             if (!rows) return headerLine
-            def body = rows.collect { r -> r.values().collect { v -> csvQuote(v, outSep, quote) }.join(outSep) }.join('\n')
+            // Look values up by column name so the body always lines up with the header,
+            // regardless of each row map's internal key order.
+            def body = rows.collect { r -> finalCols.collect { c -> csvQuote(r[c], outSep, quote) }.join(outSep) }.join('\n')
             headerLine + body + '\n'
         }
         .collectFile(name: outname, storeDir: outdir)
