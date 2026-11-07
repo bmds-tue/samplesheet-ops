@@ -1,4 +1,4 @@
-# nf-meta-samplesheet-ops
+# samplesheet-ops
 
 A single, reusable Nextflow connector for common samplesheet/metadata
 operations: merge/join, drop/select/rename columns, drop rows (`dropna` / `drop_duplicates`), filter,
@@ -128,45 +128,6 @@ Attach per-sample metadata to a per-lane sheet (every lane row gets its sample's
 nextflow run main.nf --samplesheet1 lanes.csv --samplesheet2 metadata.tsv \
   --ops merge --merge_on sample --merge_how left --outdir results
 ```
-
-## Using as a subworkflow
-
-`SAMPLESHEET_OPS` can be included in another pipeline. It takes **plain values, not
-channels** — it reads the input sheets while the workflow is being built, so all inputs
-must be known up front. `drop_header` also accepts the strings `"true"`/`"false"`; anything
-else (including a channel) fails with a clear error. Pass `null` for unused per-op params.
-
-```groovy
-include { SAMPLESHEET_OPS } from './modules/samplesheet-ops/main.nf'
-
-workflow {
-    SAMPLESHEET_OPS(
-        'sheet_a.csv',          // samplesheet1
-        'sheet_b.tsv',          // samplesheet2 (or null)
-        'merge,select_columns', // ops
-        "${params.outdir}/sheets", // outdir
-        'merged.csv',           // outname
-        '"',                    // quote
-        false,                  // drop_header
-        'sample',               // merge_on
-        'inner',                // merge_how
-        '_x,_y',                // merge_suffixes
-        null,                   // drop_columns_cols
-        'sample,reads',         // select_columns_cols
-        null,                   // rename_cols
-        null,                   // dropna_cols
-        null,                   // drop_duplicates_cols
-        null,                   // filter_col
-        'eq',                   // filter_op
-        null,                   // filter_value
-    )
-    SAMPLESHEET_OPS.out.samplesheet.view()   // path to merged.csv
-}
-```
-
-Params schema validation only runs in this repo's own entry workflow; when calling
-`SAMPLESHEET_OPS` directly, the in-workflow checks listed under
-[Validation errors](#validation-errors) still apply.
 
 ## Compatibility
 
