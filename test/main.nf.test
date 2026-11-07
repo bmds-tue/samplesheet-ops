@@ -412,4 +412,580 @@ nextflow_pipeline {
             assert !lines.any { it.startsWith("S2,") || it.startsWith("S4,") }
         }
     }
+
+    // ---------------------------------------------------------------------------------
+    // merge: repeated keys, ordering, suffixes, column clashes
+    // ---------------------------------------------------------------------------------
+
+    test("merge inner pairs every left row with every matching right row (repeated left keys)") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_lanes.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_b.tsv"
+                ops          = "merge"
+                merge_how    = "inner"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            // both S1 lanes get sheet_b's values, in the left sheet's order; S9 has no match
+            assert lines == [
+                "sample,lane,batch,reads",
+                "S1,L1,1,1000000",
+                "S1,L2,1,1000000",
+                "S2,L1,1,950000",
+            ]
+        }
+    }
+
+    test("merge left fills right columns for every repeated left key and blank-fills unmatched") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_lanes.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_b.tsv"
+                ops          = "merge"
+                merge_how    = "left"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines == [
+                "sample,lane,batch,reads",
+                "S1,L1,1,1000000",
+                "S1,L2,1,1000000",
+                "S2,L1,1,950000",
+                "S9,L1,,",
+            ]
+        }
+    }
+
+    test("merge inner expands a left row for each repeated right key") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_lanes.csv"
+                ops          = "merge"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines == [
+                "sample,condition,batch,lane",
+                "S1,treated,1,L1",
+                "S1,treated,1,L2",
+                "S2,control,1,L1",
+            ]
+        }
+    }
+
+    test("merge applies custom merge_suffixes to overlapping columns") {
+
+        when {
+            params {
+                samplesheet1   = "${projectDir}/test/testdata/sheet_a.csv"
+                samplesheet2   = "${projectDir}/test/testdata/sheet_b.tsv"
+                ops            = "merge"
+                merge_suffixes = "_left,_right"
+                outdir         = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines[0] == "sample,condition,batch_left,batch_right,reads"
+            assert lines[1] == "S1,treated,1,1,1000000"
+        }
+    }
+
+    test("merge errors when suffixing would clash with an existing column") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_clash.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_b.tsv"
+                ops          = "merge"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("merge would produce duplicate column name(s): batch_x") }
+        }
+    }
+
+    test("merge errors when merge_on is missing from samplesheet2") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_upper.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "merge"
+                merge_on     = "SAMPLE"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("merge_on 'SAMPLE' not found in samplesheet2's columns") }
+        }
+    }
+
+    test("merge errors when samplesheet2 is not given") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "merge"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("samplesheet2 is required when ops includes 'merge' or 'concat'") }
+        }
+    }
+
+    test("merge does not print debug output") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_b.tsv"
+                ops          = "merge"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            assert !workflow.stdout.any { it.contains("[sample, condition, batch]") }
+        }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // input parsing: header validation, header-only and empty inputs, quote
+    // ---------------------------------------------------------------------------------
+
+    test("duplicate column names in an input sheet fail fast") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_dupcols.csv"
+                ops          = "drop_duplicates"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("has duplicate column name(s): a") }
+        }
+    }
+
+    test("an empty (0-byte) input sheet fails with a clear message") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_empty.csv"
+                ops          = "drop_duplicates"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("is empty -- expected at least a header line") }
+        }
+    }
+
+    test("a header-only input keeps its columns and writes a header-only output") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_headeronly.csv"
+                ops          = "filter"
+                filter_col   = "condition"
+                filter_value = "treated"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines == ["sample,condition,batch"]
+        }
+    }
+
+    test("a header-only samplesheet2 still exposes its columns to merge") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_headeronly.csv"
+                ops          = "merge"
+                merge_how    = "left"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines[0] == "sample,condition_x,batch_x,condition_y,batch_y"
+            assert lines.size() == 6
+            assert lines[1] == "S1,treated,1,,"
+        }
+    }
+
+    test("a custom quote character is used for parsing and for output quoting") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_squote.csv"
+                ops          = "drop_duplicates"
+                quote        = "'"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines == ["sample,notes", "S1,'has, a comma'", "S2,plain"]
+        }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // drop_duplicates / dropna / column-selecting ops
+    // ---------------------------------------------------------------------------------
+
+    test("drop_duplicates compares key columns separately, keeping first occurrences in order") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_collide.csv"
+                ops          = "drop_duplicates"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            // ('ab','c') and ('a','bc') are distinct; only the exact repeat of ('ab','c') is dropped
+            assert lines == ["a,b", "ab,c", "a,bc", "z,z"]
+        }
+    }
+
+    test("drop_duplicates errors on an unknown key column") {
+
+        when {
+            params {
+                samplesheet1         = "${projectDir}/test/testdata/sheet_a.csv"
+                ops                  = "drop_duplicates"
+                drop_duplicates_cols = "smaple"
+                outdir               = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("drop_duplicates_cols references unknown column(s): smaple") }
+        }
+    }
+
+    test("dropna without dropna_cols checks every column") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_na.csv"
+                ops          = "dropna"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines == ["sample,condition,batch", "S1,treated,1", "S3,treated,2"]
+        }
+    }
+
+    test("dropna errors on an unknown column") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_na.csv"
+                ops          = "dropna"
+                dropna_cols  = "nope"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("dropna_cols references unknown column(s): nope") }
+        }
+    }
+
+    test("drop_columns errors on an unknown column") {
+
+        when {
+            params {
+                samplesheet1      = "${projectDir}/test/testdata/sheet_a.csv"
+                ops               = "drop_columns"
+                drop_columns_cols = "nope"
+                outdir            = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("drop_columns_cols references unknown column(s): nope") }
+        }
+    }
+
+    test("select_columns errors on an unknown column") {
+
+        when {
+            params {
+                samplesheet1        = "${projectDir}/test/testdata/sheet_a.csv"
+                ops                 = "select_columns"
+                select_columns_cols = "sample,nope"
+                outdir              = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("select_columns_cols references unknown column(s): nope") }
+        }
+    }
+
+    test("select_columns errors when a column is listed twice") {
+
+        when {
+            params {
+                samplesheet1        = "${projectDir}/test/testdata/sheet_a.csv"
+                ops                 = "select_columns"
+                select_columns_cols = "sample,sample"
+                outdir              = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("select_columns_cols lists column(s) more than once: sample") }
+        }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // filter
+    // ---------------------------------------------------------------------------------
+
+    test("filter ne keeps rows that differ from the value") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "filter"
+                filter_col   = "condition"
+                filter_op    = "ne"
+                filter_value = "treated"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines == ["sample,condition,batch", "S2,control,1", "S4,control,2"]
+        }
+    }
+
+    test("filter contains keeps rows whose value contains the substring") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "filter"
+                filter_col   = "condition"
+                filter_op    = "contains"
+                filter_value = "trol"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines == ["sample,condition,batch", "S2,control,1", "S4,control,2"]
+        }
+    }
+
+    test("filter errors on an unknown filter_col instead of silently matching") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "filter"
+                filter_col   = "conditon"
+                filter_op    = "ne"
+                filter_value = "control"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("filter_col references unknown column(s): conditon") }
+        }
+    }
+
+    test("filter matching nothing writes a header-only file") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "filter"
+                filter_col   = "condition"
+                filter_value = "nothing-matches"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines == ["sample,condition,batch"]
+        }
+    }
+
+    test("filter matching nothing with drop_header still writes an empty file") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "filter"
+                filter_col   = "condition"
+                filter_value = "nothing-matches"
+                drop_header  = true
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def out = path("${launchDir}/results/samplesheet.csv")
+            assert out.exists()
+            assert out.size() == 0
+        }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // concat, output format, op-list validation
+    // ---------------------------------------------------------------------------------
+
+    test("concat keeps samplesheet1 rows before samplesheet2 rows, in input order") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                samplesheet2 = "${projectDir}/test/testdata/sheet_b.tsv"
+                ops          = "concat"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines == [
+                "sample,condition,batch,reads",
+                "S1,treated,1,",
+                "S2,control,1,",
+                "S3,treated,2,",
+                "S4,control,2,",
+                "S5,treated,1,",
+                "S1,,1,1000000",
+                "S2,,1,950000",
+                "S3,,2,1100000",
+                "S6,,3,500000",
+            ]
+        }
+    }
+
+    test("a .tab outname writes tab-delimited output") {
+
+        when {
+            params {
+                samplesheet1      = "${projectDir}/test/testdata/sheet_a.csv"
+                ops               = "drop_columns"
+                drop_columns_cols = "batch"
+                outdir            = "${launchDir}/results"
+                outname           = "out.tab"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/out.tab").readLines()
+            assert lines[0] == "sample\tcondition"
+            assert lines[1] == "S1\ttreated"
+        }
+    }
+
+    test("an op listed twice in ops fails fast") {
+
+        when {
+            params {
+                samplesheet1 = "${projectDir}/test/testdata/sheet_a.csv"
+                ops          = "dropna,dropna"
+                outdir       = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("ops lists op(s) more than once: dropna") }
+        }
+    }
+
+    test("rename then select_columns sees the renamed columns") {
+
+        when {
+            params {
+                samplesheet1        = "${projectDir}/test/testdata/sheet_a.csv"
+                ops                 = "rename,select_columns"
+                rename_cols         = "sample=sample_id"
+                select_columns_cols = "sample_id,condition"
+                outdir              = "${launchDir}/results"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines[0] == "sample_id,condition"
+            assert lines[1] == "S1,treated"
+            assert lines.size() == 6
+        }
+    }
 }

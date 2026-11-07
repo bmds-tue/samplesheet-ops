@@ -1,0 +1,148 @@
+nextflow_workflow {
+
+    name "Test SAMPLESHEET_OPS called as a subworkflow"
+    script "main.nf"
+    workflow "SAMPLESHEET_OPS"
+
+    // Positional inputs, in the order of SAMPLESHEET_OPS's take: block.
+    // Index 6 is drop_header; everything after it is per-op params.
+
+    test("drop_header given as the string 'false' keeps the header") {
+
+        when {
+            workflow {
+                """
+                input[0]  = "${projectDir}/test/testdata/sheet_a.csv"
+                input[1]  = null
+                input[2]  = "drop_columns"
+                input[3]  = "${launchDir}/results"
+                input[4]  = "samplesheet.csv"
+                input[5]  = '"'
+                input[6]  = "false"
+                input[7]  = "sample"
+                input[8]  = "inner"
+                input[9]  = "_x,_y"
+                input[10] = "batch"
+                input[11] = null
+                input[12] = null
+                input[13] = null
+                input[14] = null
+                input[15] = null
+                input[16] = "eq"
+                input[17] = null
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines[0] == "sample,condition"
+            assert lines.size() == 6
+        }
+    }
+
+    test("drop_header given as the string 'true' drops the header") {
+
+        when {
+            workflow {
+                """
+                input[0]  = "${projectDir}/test/testdata/sheet_a.csv"
+                input[1]  = null
+                input[2]  = "drop_columns"
+                input[3]  = "${launchDir}/results"
+                input[4]  = "samplesheet.csv"
+                input[5]  = '"'
+                input[6]  = "true"
+                input[7]  = "sample"
+                input[8]  = "inner"
+                input[9]  = "_x,_y"
+                input[10] = "batch"
+                input[11] = null
+                input[12] = null
+                input[13] = null
+                input[14] = null
+                input[15] = null
+                input[16] = "eq"
+                input[17] = null
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            def lines = path("${launchDir}/results/samplesheet.csv").readLines()
+            assert lines.size() == 5
+            assert lines[0] == "S1,treated"
+        }
+    }
+
+    test("drop_header given as a channel fails with a clear message") {
+
+        when {
+            workflow {
+                """
+                input[0]  = "${projectDir}/test/testdata/sheet_a.csv"
+                input[1]  = null
+                input[2]  = "drop_columns"
+                input[3]  = "${launchDir}/results"
+                input[4]  = "samplesheet.csv"
+                input[5]  = '"'
+                input[6]  = channel.value(false)
+                input[7]  = "sample"
+                input[8]  = "inner"
+                input[9]  = "_x,_y"
+                input[10] = "batch"
+                input[11] = null
+                input[12] = null
+                input[13] = null
+                input[14] = null
+                input[15] = null
+                input[16] = "eq"
+                input[17] = null
+                """
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("drop_header must be a boolean") }
+        }
+    }
+
+    test("emits the written samplesheet path") {
+
+        when {
+            workflow {
+                """
+                input[0]  = "${projectDir}/test/testdata/sheet_a.csv"
+                input[1]  = "${projectDir}/test/testdata/sheet_b.tsv"
+                input[2]  = "merge,select_columns"
+                input[3]  = "${launchDir}/results"
+                input[4]  = "merged.tsv"
+                input[5]  = '"'
+                input[6]  = false
+                input[7]  = "sample"
+                input[8]  = "inner"
+                input[9]  = "_x,_y"
+                input[10] = null
+                input[11] = "sample,reads"
+                input[12] = null
+                input[13] = null
+                input[14] = null
+                input[15] = null
+                input[16] = "eq"
+                input[17] = null
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            assert workflow.out.samplesheet.size() == 1
+            def emitted = path(workflow.out.samplesheet[0].toString())
+            assert emitted.fileName.toString() == "merged.tsv"
+            assert emitted.readLines() == ["sample\treads", "S1\t1000000", "S2\t950000", "S3\t1100000"]
+        }
+    }
+}
