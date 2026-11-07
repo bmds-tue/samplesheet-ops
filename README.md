@@ -171,17 +171,7 @@ Params schema validation only runs in this repo's own entry workflow; when calli
 ## Compatibility
 
 This repo tracks the **most recent nf-core pipeline template**: its minimum Nextflow
-version and its nf-schema plugin version are kept at or above the template's
-(`manifest.nextflowVersion` and `plugins` in the template's `nextflow.config`). The
-`!` prefix in `nextflowVersion` makes Nextflow refuse to run on an older version
-instead of only warning.
-
-When a new nf-core/tools release changes either value, bump `nextflow.config` and add
-a row here (newest first):
-
-| Since | nf-core template | Min. Nextflow | nf-schema | Tested on |
-|---|---|---|---|---|
-| 2026-11-06 | 4.2.1 | 25.10.4 | 2.7.3 | 25.10.4, 26.04.0, 26.10.3 |
+version and its nf-schema plugin version are kept at or above the template's.
 
 ## Params validation & help
 
